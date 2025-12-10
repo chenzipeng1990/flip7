@@ -3,24 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <meta name="touch-action" content="manipulation"> <!-- 禁用移动端默认触摸行为 -->
+    <meta name="touch-action" content="none"> <!-- 彻底禁用移动端触摸行为 -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>7连翻游戏记分版</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent; /* 去除移动端点击高亮 */
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
         }
         body {
             font-family: Arial, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center; /* 垂直居中核心 */
+            justify-content: center;
             padding: 20px;
             background-color: #f5f5f5;
-            min-height: 100vh; /* 让body占满屏幕高度 */
+            min-height: 100vh;
+            touch-action: none;
         }
         .main-container {
             display: flex;
@@ -28,14 +31,14 @@
             align-items: center;
             justify-content: center;
             width: 100%;
-            max-width: 600px; /* 限制最大宽度，避免内容过宽 */
+            max-width: 600px;
         }
         .score-container {
             display: flex;
             flex-wrap: wrap;
             gap: 15px;
-            margin-bottom: 40px; /* 增加底部间距，视觉更舒适 */
-            justify-content: center; /* 计分块水平居中 */
+            margin-bottom: 40px;
+            justify-content: center;
             width: 100%;
         }
         .score-block {
@@ -49,15 +52,17 @@
             font-size: 24px;
             border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.2s;
-            user-select: none; /* 禁止选中文本 */
-            touch-action: none; /* 禁止触摸默认行为 */
+            transition: all 0.2s ease;
+            user-select: none;
+            position: relative;
+            z-index: 1;
         }
-        .score-block:active {
-            background-color: #34495e; /* 点击反馈 */
+        .score-block.pressed {
+            background-color: #34495e;
+            transform: scale(0.98);
         }
         .score-block.long-press {
-            background-color: #e74c3c; /* 长按变红 */
+            background-color: #e74c3c;
         }
         .add-btn {
             width: 80px;
@@ -71,28 +76,31 @@
             font-size: 36px;
             border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.2s;
-            touch-action: none;
+            transition: all 0.2s ease;
+            user-select: none;
+            z-index: 1;
         }
-        .add-btn:active {
+        .add-btn.pressed {
             background-color: #e0e6e8;
+            transform: scale(0.98);
         }
         .clear-btn {
-            padding: 12px 40px; /* 加宽按钮，视觉更协调 */
+            padding: 12px 40px;
             background-color: #2c3e50;
             color: white;
             border: none;
             border-radius: 6px;
             font-size: 18px;
             cursor: pointer;
-            transition: background-color 0.2s;
-            touch-action: manipulation;
-            margin-top: 10px;
+            transition: all 0.2s ease;
+            user-select: none;
+            z-index: 1;
         }
-        .clear-btn:active {
+        .clear-btn.pressed {
             background-color: #34495e;
+            transform: scale(0.98);
         }
-        /* 自定义弹窗样式（适配移动端） */
+        /* 自定义弹窗样式 */
         .custom-prompt {
             position: fixed;
             top: 0;
@@ -104,6 +112,7 @@
             justify-content: center;
             align-items: center;
             z-index: 9999;
+            touch-action: none;
         }
         .prompt-dialog {
             background: white;
@@ -111,6 +120,7 @@
             border-radius: 10px;
             width: 85%;
             max-width: 320px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }
         .prompt-title {
             font-size: 17px;
@@ -126,6 +136,8 @@
             border-radius: 6px;
             margin-bottom: 20px;
             text-align: center;
+            outline: none;
+            -webkit-appearance: none;
         }
         .prompt-btns {
             display: flex;
@@ -138,14 +150,21 @@
             border-radius: 6px;
             font-size: 16px;
             cursor: pointer;
+            transition: all 0.2s ease;
         }
         .btn-cancel {
             background-color: #ecf0f1;
             color: #7f8c8d;
         }
+        .btn-cancel:active {
+            background-color: #d5dbdb;
+        }
         .btn-confirm {
             background-color: #2c3e50;
             color: white;
+        }
+        .btn-confirm:active {
+            background-color: #34495e;
         }
     </style>
 </head>
@@ -160,91 +179,81 @@
     </div>
 
     <script>
+        // 全局变量
         const scoreContainer = document.querySelector('.score-container');
         const addBtn = document.querySelector('.add-btn');
         const clearBtn = document.querySelector('.clear-btn');
-        const LONG_PRESS_TIME = 800; // 长按触发时间
+        const LONG_PRESS_TIME = 800;
         let pressTimer = null;
-        let isLongPress = false; // 标记是否触发了长按
+        let activeBlock = null; // 当前按压的块
+        let isLongPressTriggered = false;
 
-        // 初始化单个计分块的事件（点击+长按）
-        function initBlockEvents(block) {
-            // 触摸开始（移动端核心）
-            block.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // 阻止默认行为（如滚动、缩放）
-                startPress(block);
-            });
+        // ========== 核心修复：移动端触摸事件处理 ==========
+        // 触摸开始（优先处理）
+        function handleTouchStart(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const target = e.target.closest('.score-block');
+            if (!target) return;
 
-            // 鼠标按下（PC端）
-            block.addEventListener('mousedown', () => {
-                startPress(block);
-            });
+            activeBlock = target;
+            isLongPressTriggered = false;
 
-            // 触摸结束（移动端）
-            block.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                endPress(block, e);
-            });
+            // 添加按压样式
+            target.classList.add('pressed');
 
-            // 鼠标松开/离开（PC端）
-            block.addEventListener('mouseup', (e) => endPress(block, e));
-            block.addEventListener('mouseleave', () => endPress(block));
-
-            // 点击事件（兼容PC+移动端）
-            block.addEventListener('click', (e) => {
-                e.preventDefault();
-                // 若触发了长按，则跳过点击逻辑
-                if (isLongPress) {
-                    isLongPress = false;
-                    return;
-                }
-                handleScoreEdit(block);
-            });
-        }
-
-        // 开始按压逻辑
-        function startPress(block) {
-            isLongPress = false;
             // 启动长按计时器
             pressTimer = setTimeout(() => {
-                isLongPress = true; // 标记为长按
-                block.classList.add('long-press');
-                // 检查最小数量
-                const blockCount = document.querySelectorAll('.score-block').length;
-                if (blockCount <= 2) {
-                    alert('至少保留2个计分块');
-                    endPress(block);
-                    return;
-                }
-                // 确认删除
-                if (confirm('确定删除该计分块吗？')) {
-                    block.remove();
-                }
-                endPress(block);
+                isLongPressTriggered = true;
+                target.classList.add('long-press');
+                handleLongPress(target);
             }, LONG_PRESS_TIME);
-            // 按压反馈
-            block.style.backgroundColor = '#34495e';
         }
 
-        // 结束按压逻辑
-        function endPress(block, e) {
+        // 触摸结束
+        function handleTouchEnd(e) {
+            e.stopPropagation();
+            e.preventDefault();
+
+            if (!activeBlock) return;
+
+            // 清除计时器和样式
             clearTimeout(pressTimer);
-            pressTimer = null;
-            // 恢复样式
-            block.classList.remove('long-press');
-            block.style.backgroundColor = '#2c3e50';
+            activeBlock.classList.remove('pressed', 'long-press');
+
+            // 如果不是长按，触发点击事件
+            if (!isLongPressTriggered && activeBlock) {
+                setTimeout(() => {
+                    handleScoreEdit(activeBlock);
+                }, 0); // 异步执行，避免事件冲突
+            }
+
+            activeBlock = null;
         }
 
-        // 自定义弹窗（替代prompt，适配移动端）
+        // 长按处理
+        function handleLongPress(block) {
+            const blockCount = document.querySelectorAll('.score-block').length;
+            if (blockCount <= 2) {
+                alert('至少保留2个计分块');
+                return;
+            }
+            if (confirm('确定删除该计分块吗？')) {
+                block.remove();
+            }
+        }
+
+        // ========== 分数编辑（自定义弹窗） ==========
         function showCustomPrompt() {
             return new Promise((resolve) => {
-                // 创建弹窗元素
+                // 创建弹窗
                 const promptEl = document.createElement('div');
                 promptEl.className = 'custom-prompt';
                 promptEl.innerHTML = `
                     <div class="prompt-dialog">
                         <div class="prompt-title">请输入要添加的分数（增量）</div>
-                        <input type="number" class="prompt-input" value="0">
+                        <input type="number" class="prompt-input" value="0" autocomplete="off">
                         <div class="prompt-btns">
                             <button class="prompt-btn btn-cancel">取消</button>
                             <button class="prompt-btn btn-confirm">确认</button>
@@ -257,8 +266,14 @@
                 const cancelBtn = promptEl.querySelector('.btn-cancel');
                 const confirmBtn = promptEl.querySelector('.btn-confirm');
 
-                // 自动聚焦输入框
-                input.focus();
+                // 强制聚焦输入框（移动端关键）
+                setTimeout(() => {
+                    input.focus();
+                    // 移动端唤起键盘
+                    if (input.setSelectionRange) {
+                        input.setSelectionRange(0, input.value.length);
+                    }
+                }, 100);
 
                 // 取消按钮
                 cancelBtn.addEventListener('click', () => {
@@ -273,7 +288,7 @@
                     resolve(value);
                 });
 
-                // 点击弹窗外部关闭
+                // 点击外部关闭
                 promptEl.addEventListener('click', (e) => {
                     if (e.target === promptEl) {
                         document.body.removeChild(promptEl);
@@ -281,7 +296,7 @@
                     }
                 });
 
-                // 键盘回车确认
+                // 回车确认
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         const value = input.value.trim();
@@ -292,30 +307,31 @@
             });
         }
 
-        // 编辑分数逻辑（核心）
+        // 编辑分数逻辑
         async function handleScoreEdit(block) {
-            const currentScore = parseInt(block.dataset.score || 0);
-            // 显示自定义弹窗
-            const addScoreStr = await showCustomPrompt();
-            
-            // 取消输入
-            if (addScoreStr === null || addScoreStr === '') return;
-            
-            // 校验数字
-            const addScore = parseInt(addScoreStr);
-            if (isNaN(addScore)) {
-                alert('请输入有效的数字！');
-                return;
+            try {
+                const currentScore = parseInt(block.dataset.score || 0);
+                const addScoreStr = await showCustomPrompt();
+
+                if (addScoreStr === null || addScoreStr === '') return;
+
+                const addScore = parseInt(addScoreStr);
+                if (isNaN(addScore)) {
+                    alert('请输入有效的数字！');
+                    return;
+                }
+
+                const newScore = currentScore + addScore;
+                block.dataset.score = newScore;
+                block.textContent = newScore;
+            } catch (e) {
+                console.error('编辑分数出错：', e);
             }
-            
-            // 计算新分数并更新
-            const newScore = currentScore + addScore;
-            block.dataset.score = newScore;
-            block.textContent = newScore;
         }
 
-        // 添加新计分块
-        addBtn.addEventListener('click', () => {
+        // ========== 其他功能 ==========
+        // 添加计分块
+        function handleAddBlock() {
             const currentBlocks = document.querySelectorAll('.score-block').length;
             if (currentBlocks >= 10) {
                 alert('最多支持10人计分');
@@ -325,29 +341,89 @@
             newBlock.className = 'score-block';
             newBlock.dataset.score = '0';
             newBlock.textContent = '0';
-            // 绑定事件
-            initBlockEvents(newBlock);
-            // 插入到添加按钮前
-            scoreContainer.insertBefore(newBlock, addBtn);
-        });
+            
+            // 绑定触摸事件
+            newBlock.addEventListener('touchstart', handleTouchStart);
+            newBlock.addEventListener('touchend', handleTouchEnd);
+            newBlock.addEventListener('touchcancel', handleTouchEnd);
 
-        // 清空所有分数
-        clearBtn.addEventListener('click', () => {
+            scoreContainer.insertBefore(newBlock, addBtn);
+        }
+
+        // 清空分数
+        function handleClearScores() {
             document.querySelectorAll('.score-block').forEach(block => {
                 block.dataset.score = '0';
                 block.textContent = '0';
             });
-        });
-
-        // 初始化现有计分块
-        document.querySelectorAll('.score-block').forEach(block => {
-            initBlockEvents(block);
-        });
-
-        // 解决移动端300ms点击延迟
-        if ('ontouchstart' in window) {
-            document.addEventListener('touchstart', () => {}, { passive: false });
         }
+
+        // ========== 初始化事件绑定 ==========
+        function initEvents() {
+            // 计分块触摸事件（移动端核心）
+            document.querySelectorAll('.score-block').forEach(block => {
+                block.addEventListener('touchstart', handleTouchStart);
+                block.addEventListener('touchend', handleTouchEnd);
+                block.addEventListener('touchcancel', handleTouchEnd);
+            });
+
+            // +号按钮事件
+            addBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                addBtn.classList.add('pressed');
+            });
+            addBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                addBtn.classList.remove('pressed');
+                handleAddBlock();
+            });
+
+            // 清空按钮事件
+            clearBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                clearBtn.classList.add('pressed');
+            });
+            clearBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                clearBtn.classList.remove('pressed');
+                handleClearScores();
+            });
+
+            // PC端兼容（备用）
+            document.querySelectorAll('.score-block').forEach(block => {
+                block.addEventListener('click', () => {
+                    if (!isLongPressTriggered) {
+                        handleScoreEdit(block);
+                    }
+                });
+                block.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    block.classList.add('pressed');
+                    pressTimer = setTimeout(() => {
+                        isLongPressTriggered = true;
+                        handleLongPress(block);
+                    }, LONG_PRESS_TIME);
+                });
+                block.addEventListener('mouseup', () => {
+                    clearTimeout(pressTimer);
+                    block.classList.remove('pressed');
+                });
+                block.addEventListener('mouseleave', () => {
+                    clearTimeout(pressTimer);
+                    block.classList.remove('pressed');
+                });
+            });
+
+            addBtn.addEventListener('click', handleAddBlock);
+            clearBtn.addEventListener('click', handleClearScores);
+        }
+
+        // 初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            initEvents();
+            // 禁用浏览器默认行为
+            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        });
     </script>
 </body>
 </html>
