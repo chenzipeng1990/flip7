@@ -224,9 +224,7 @@
 
             // 如果不是长按，触发点击事件
             if (!isLongPressTriggered && activeBlock) {
-                setTimeout(() => {
-                    handleScoreEdit(activeBlock);
-                }, 0); // 异步执行，避免事件冲突
+                handleScoreEdit(activeBlock);
             }
 
             activeBlock = null;
