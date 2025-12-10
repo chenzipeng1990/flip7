@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7连翻游戏记分版</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .score-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .score-block {
+            width: 80px;
+            height: 80px;
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none; /* 禁止长按选中文本 */
+        }
+        .score-block:hover {
+            background-color: #34495e;
+        }
+        .score-block.long-press {
+            background-color: #e74c3c; /* 长按期间变红提示 */
+        }
+        .add-btn {
+            width: 80px;
+            height: 80px;
+            background-color: #ecf0f1;
+            border: 2px dashed #bdc3c7;
+            color: #7f8c8d;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .add-btn:hover {
+            background-color: #e0e6e8;
+        }
+        .clear-btn {
+            padding: 12px 30px;
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .clear-btn:hover {
+            background-color: #34495e;
+        }
+    </style>
+</head>
+<body>
+    <div class="score-container">
+        <!-- 初始2个计分块 -->
+        <div class="score-block" data-score="0">0</div>
+        <div class="score-block" data-score="0">0</div>
+        <div class="add-btn">+</div>
+    </div>
+    <button class="clear-btn">清空</button>
+
+    <script>
+        const scoreContainer = document.querySelector('.score-container');
+        const addBtn = document.querySelector('.add-btn');
+        const clearBtn = document.querySelector('.clear-btn');
+        const LONG_PRESS_TIME = 800; // 长按触发时间（毫秒）
+        let pressTimer = null; // 长按计时器
+
+        // 初始化长按事件（通用方法，给单个计分块绑定）
+        function initLongPressEvent(block) {
+            // 开始按压（PC端mousedown / 移动端touchstart）
+            block.addEventListener('mousedown', startPress);
+            block.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // 阻止移动端默认触摸行为（如滚动）
+                startPress.call(block, e);
+            });
+
+            // 结束按压（PC端mouseup/mouseleave / 移动端touchend/touchcancel）
+            block.addEventListener('mouseup', endPress);
+            block.addEventListener('mouseleave', endPress);
+            block.addEventListener('touchend', endPress);
+            block.addEventListener('touchcancel', endPress);
+
+            // 开始按压逻辑
+            function startPress() {
+                const self = this;
+                // 启动计时器，达到长按时间则触发删除
+                pressTimer = setTimeout(() => {
+                    const blockCount = document.querySelectorAll('.score-block').length;
+                    if (blockCount <= 2) {
+                        alert('至少保留2个计分块');
+                        endPress(); // 清除计时器和样式
+                        return;
+                    }
+                    self.classList.add('long-press');
+                    if (confirm('确定删除该计分块吗？')) {
+                        self.remove();
+                    }
+                    endPress(); // 清除计时器和样式
+                }, LONG_PRESS_TIME);
+                // 按压时的样式反馈
+                this.style.backgroundColor = '#34495e';
+            }
+
+            // 结束按压逻辑
+            function endPress() {
+                clearTimeout(pressTimer); // 清除计时器
+                pressTimer = null;
+                // 恢复原有样式
+                block.classList.remove('long-press');
+                block.style.backgroundColor = '#2c3e50';
+            }
+        }
+
+        // 添加计分块
+        addBtn.addEventListener('click', () => {
+            const currentBlocks = document.querySelectorAll('.score-block');
+            if (currentBlocks.length >= 10) {
+                alert('最多支持10人计分');
+                return;
+            }
+            const newBlock = document.createElement('div');
+            newBlock.className = 'score-block';
+            newBlock.dataset.score = '0';
+            newBlock.textContent = '0';
+            // 绑定点击修改分数事件
+            newBlock.addEventListener('click', handleScoreBlockClick);
+            // 绑定长按删除事件
+            initLongPressEvent(newBlock);
+            // 插入到添加按钮前
+            scoreContainer.insertBefore(newBlock, addBtn);
+        });
+
+        // 计分块点击事件（修改分数）
+        function handleScoreBlockClick(e) {
+            // 如果长按计时器存在，说明是长按后触发的点击，直接返回
+            if (pressTimer) return;
+            const block = e.target;
+            const currentScore = parseInt(block.dataset.score);
+            const addScore = prompt('请输入要添加的分数：', '0');
+            if (addScore === null) return;
+            const num = parseInt(addScore);
+            if (isNaN(num)) {
+                alert('请输入有效数字');
+                return;
+            }
+            const newScore = currentScore + num;
+            block.dataset.score = newScore;
+            block.textContent = newScore;
+        }
+
+        // 绑定初始计分块的事件
+        document.querySelectorAll('.score-block').forEach(block => {
+            block.addEventListener('click', handleScoreBlockClick);
+            initLongPressEvent(block); // 绑定长按删除
+        });
+
+        // 清空分数
+        clearBtn.addEventListener('click', () => {
+            document.querySelectorAll('.score-block').forEach(block => {
+                block.dataset.score = '0';
+                block.textContent = '0';
+            });
+        });
+    </script>
+</body>
+</html>
