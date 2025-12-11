@@ -157,6 +157,7 @@
             display: flex;
             gap: 10px;
             justify-content: center;
+            flex-wrap: wrap;
         }
         .prompt-btn {
             padding: 10px 25px;
@@ -165,6 +166,8 @@
             font-size: 16px;
             cursor: pointer;
             transition: all 0.2s ease;
+            flex: 1;
+            min-width: 100px;
         }
         .btn-cancel {
             background-color: #ecf0f1;
@@ -179,6 +182,20 @@
         }
         .btn-confirm:active {
             background-color: #34495e;
+        }
+        .btn-edit-nickname {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-edit-nickname:active {
+            background-color: #2980b9;
+        }
+        .btn-delete-block {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .btn-delete-block:active {
+            background-color: #c0392b;
         }
     </style>
 </head>
@@ -307,15 +324,15 @@
             scoreContainer.insertBefore(newBlock, addBtn);
         }
 
-        // ========== 昵称输入弹窗 ==========
-        function showNicknamePrompt() {
+        // ========== 昵称输入弹窗（新增/修改通用） ==========
+        function showNicknamePrompt(title = '请输入玩家昵称', defaultNickname = '') {
             return new Promise((resolve) => {
                 const promptEl = document.createElement('div');
                 promptEl.className = 'custom-prompt';
                 promptEl.innerHTML = `
                     <div class="prompt-dialog">
-                        <div class="prompt-title">请输入玩家昵称</div>
-                        <input type="text" class="prompt-input" placeholder="例如：张三" autocomplete="off">
+                        <div class="prompt-title">${title}</div>
+                        <input type="text" class="prompt-input" placeholder="例如：张三" autocomplete="off" value="${defaultNickname}">
                         <div class="prompt-btns">
                             <button class="prompt-btn btn-cancel">取消</button>
                             <button class="prompt-btn btn-confirm">确认</button>
@@ -328,9 +345,12 @@
                 const cancelBtn = promptEl.querySelector('.btn-cancel');
                 const confirmBtn = promptEl.querySelector('.btn-confirm');
 
-                // 强制聚焦输入框
+                // 强制聚焦输入框并选中现有内容（修改时）
                 setTimeout(() => {
                     input.focus();
+                    if (defaultNickname) {
+                        input.setSelectionRange(0, defaultNickname.length);
+                    }
                 }, 100);
 
                 // 取消按钮
@@ -360,6 +380,55 @@
                         const value = input.value.trim();
                         document.body.removeChild(promptEl);
                         resolve(value);
+                    }
+                });
+            });
+        }
+
+        // ========== 长按操作选项弹窗 ==========
+        function showLongPressOptionsPrompt(block) {
+            return new Promise((resolve) => {
+                const promptEl = document.createElement('div');
+                promptEl.className = 'custom-prompt';
+                promptEl.innerHTML = `
+                    <div class="prompt-dialog">
+                        <div class="prompt-title">请选择操作（${block.dataset.nickname}）</div>
+                        <div class="prompt-btns">
+                            <button class="prompt-btn btn-edit-nickname">修改昵称</button>
+                            <button class="prompt-btn btn-delete-block">删除计分块</button>
+                            <button class="prompt-btn btn-cancel">取消</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(promptEl);
+
+                const editNicknameBtn = promptEl.querySelector('.btn-edit-nickname');
+                const deleteBlockBtn = promptEl.querySelector('.btn-delete-block');
+                const cancelBtn = promptEl.querySelector('.btn-cancel');
+
+                // 修改昵称按钮
+                editNicknameBtn.addEventListener('click', () => {
+                    document.body.removeChild(promptEl);
+                    resolve('edit');
+                });
+
+                // 删除计分块按钮
+                deleteBlockBtn.addEventListener('click', () => {
+                    document.body.removeChild(promptEl);
+                    resolve('delete');
+                });
+
+                // 取消按钮
+                cancelBtn.addEventListener('click', () => {
+                    document.body.removeChild(promptEl);
+                    resolve(null);
+                });
+
+                // 点击外部关闭
+                promptEl.addEventListener('click', (e) => {
+                    if (e.target === promptEl) {
+                        document.body.removeChild(promptEl);
+                        resolve(null);
                     }
                 });
             });
@@ -404,14 +473,46 @@
             activeBlock = null;
         }
 
-        // ========== 长按删除处理 ==========
-        function handleLongPress(block) {
+        // ========== 长按操作处理（核心修改） ==========
+        async function handleLongPress(block) {
+            // 弹出操作选项弹窗
+            const action = await showLongPressOptionsPrompt(block);
+
+            if (action === 'edit') {
+                // 执行修改昵称逻辑
+                handleEditNickname(block);
+            } else if (action === 'delete') {
+                // 执行删除计分块逻辑
+                handleDeleteBlock(block);
+            }
+            // 取消则不执行任何操作
+        }
+
+        // ========== 修改昵称逻辑 ==========
+        async function handleEditNickname(block) {
+            // 获取当前昵称作为默认值
+            const currentNickname = block.dataset.nickname;
+            const newNickname = await showNicknamePrompt('请修改玩家昵称', currentNickname);
+
+            if (!newNickname) {
+                return; // 取消输入则返回
+            }
+
+            // 更新计分块的昵称
+            block.dataset.nickname = newNickname;
+            block.querySelector('.nickname').textContent = newNickname;
+            // 保存数据到本地存储
+            saveScoreDataToLocal();
+        }
+
+        // ========== 删除计分块逻辑 ==========
+        function handleDeleteBlock(block) {
             const blockCount = document.querySelectorAll('.score-block').length;
             if (blockCount <= 2) {
                 alert('至少保留2个计分块');
                 return;
             }
-            if (confirm(`确定删除 ${block.dataset.nickname} 吗？`)) {
+            if (confirm(`确定删除 ${block.dataset.nickname} 的计分块吗？`)) {
                 block.remove();
                 // 删除后保存数据
                 saveScoreDataToLocal();
