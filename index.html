@@ -185,14 +185,7 @@
 <body>
     <div class="main-container">
         <div class="score-container">
-            <div class="score-block" data-score="0" data-nickname="玩家1">
-                <div class="nickname">玩家1</div>
-                <div class="score">0</div>
-            </div>
-            <div class="score-block" data-score="0" data-nickname="玩家2">
-                <div class="nickname">玩家2</div>
-                <div class="score">0</div>
-            </div>
+            <!-- 这里的计分块会由本地存储数据渲染，默认先留空 -->
             <div class="add-btn">+</div>
         </div>
         <button class="clear-btn">清空</button>
@@ -204,14 +197,119 @@
         const addBtn = document.querySelector('.add-btn');
         const clearBtn = document.querySelector('.clear-btn');
         const LONG_PRESS_TIME = 800;
+        const STORAGE_KEY = 'sevenFlipScoreData'; // 本地存储的键名
         let pressTimer = null;
         let activeBlock = null; // 当前按压的块
         let isLongPressTriggered = false;
 
-        // 显示昵称输入弹窗
+        // ========== 本地存储核心函数 ==========
+        /**
+         * 保存当前所有计分块数据到localStorage
+         */
+        function saveScoreDataToLocal() {
+            const scoreBlocks = document.querySelectorAll('.score-block');
+            // 收集所有计分块的昵称和分数
+            const scoreData = Array.from(scoreBlocks).map(block => ({
+                nickname: block.dataset.nickname || '',
+                score: parseInt(block.dataset.score || 0)
+            }));
+            // 转换为JSON字符串存储
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(scoreData));
+        }
+
+        /**
+         * 从localStorage加载计分块数据
+         * @returns {Array} 计分块数据数组，格式：[{nickname: 'xxx', score: 0}, ...]
+         */
+        function loadScoreDataFromLocal() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (!savedData) {
+                // 没有保存的数据，返回默认的两个玩家数据
+                return [
+                    { nickname: '玩家1', score: 0 },
+                    { nickname: '玩家2', score: 0 }
+                ];
+            }
+            try {
+                const parsedData = JSON.parse(savedData);
+                // 确保数据是数组，且至少有2个计分块（防止数据损坏）
+                if (Array.isArray(parsedData) && parsedData.length >= 2) {
+                    return parsedData;
+                } else {
+                    return [
+                        { nickname: '玩家1', score: 0 },
+                        { nickname: '玩家2', score: 0 }
+                    ];
+                }
+            } catch (e) {
+                console.error('加载本地存储数据失败，使用默认数据：', e);
+                return [
+                    { nickname: '玩家1', score: 0 },
+                    { nickname: '玩家2', score: 0 }
+                ];
+            }
+        }
+
+        /**
+         * 根据加载的数据渲染计分块
+         */
+        function renderScoreBlocksFromData() {
+            const scoreData = loadScoreDataFromLocal();
+            // 先清空已有的计分块（保留+按钮）
+            document.querySelectorAll('.score-block').forEach(block => block.remove());
+            // 遍历数据创建计分块
+            scoreData.forEach(data => {
+                createScoreBlock(data.nickname, data.score);
+            });
+        }
+
+        /**
+         * 创建单个计分块并添加到页面（复用逻辑）
+         * @param {string} nickname 玩家昵称
+         * @param {number} score 初始分数
+         */
+        function createScoreBlock(nickname, score) {
+            const newBlock = document.createElement('div');
+            newBlock.className = 'score-block';
+            newBlock.dataset.nickname = nickname;
+            newBlock.dataset.score = score;
+            newBlock.innerHTML = `
+                <div class="nickname">${nickname}</div>
+                <div class="score">${score}</div>
+            `;
+            // 绑定触摸事件
+            newBlock.addEventListener('touchstart', handleTouchStart);
+            newBlock.addEventListener('touchend', handleTouchEnd);
+            newBlock.addEventListener('touchcancel', handleTouchEnd);
+            // 绑定PC端事件
+            newBlock.addEventListener('click', () => {
+                if (!isLongPressTriggered) {
+                    handleScoreEdit(newBlock);
+                }
+            });
+            newBlock.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                newBlock.classList.add('pressed');
+                pressTimer = setTimeout(() => {
+                    isLongPressTriggered = true;
+                    handleLongPress(newBlock);
+                }, LONG_PRESS_TIME);
+            });
+            newBlock.addEventListener('mouseup', () => {
+                clearTimeout(pressTimer);
+                newBlock.classList.remove('pressed');
+            });
+            newBlock.addEventListener('mouseleave', () => {
+                clearTimeout(pressTimer);
+                newBlock.classList.remove('pressed');
+            });
+            // 插入到+按钮前面
+            scoreContainer.insertBefore(newBlock, addBtn);
+        }
+
+        // ========== 昵称输入弹窗 ==========
         function showNicknamePrompt() {
             return new Promise((resolve) => {
-                // 创建弹窗
                 const promptEl = document.createElement('div');
                 promptEl.className = 'custom-prompt';
                 promptEl.innerHTML = `
@@ -267,8 +365,7 @@
             });
         }
 
-        // ========== 核心修复：移动端触摸事件处理 ==========
-        // 触摸开始（优先处理）
+        // ========== 触摸事件处理 ==========
         function handleTouchStart(e) {
             e.stopPropagation();
             e.preventDefault();
@@ -279,7 +376,6 @@
             activeBlock = target;
             isLongPressTriggered = false;
 
-            // 添加按压样式
             target.classList.add('pressed');
 
             // 启动长按计时器
@@ -290,7 +386,6 @@
             }, LONG_PRESS_TIME);
         }
 
-        // 触摸结束
         function handleTouchEnd(e) {
             e.stopPropagation();
             e.preventDefault();
@@ -301,7 +396,7 @@
             clearTimeout(pressTimer);
             activeBlock.classList.remove('pressed', 'long-press');
 
-            // 如果不是长按，触发点击事件
+            // 如果不是长按，触发分数编辑
             if (!isLongPressTriggered && activeBlock) {
                 handleScoreEdit(activeBlock);
             }
@@ -309,7 +404,7 @@
             activeBlock = null;
         }
 
-        // 长按处理
+        // ========== 长按删除处理 ==========
         function handleLongPress(block) {
             const blockCount = document.querySelectorAll('.score-block').length;
             if (blockCount <= 2) {
@@ -318,13 +413,14 @@
             }
             if (confirm(`确定删除 ${block.dataset.nickname} 吗？`)) {
                 block.remove();
+                // 删除后保存数据
+                saveScoreDataToLocal();
             }
         }
 
-        // ========== 分数编辑（自定义弹窗） ==========
+        // ========== 分数编辑弹窗 ==========
         function showCustomPrompt() {
             return new Promise((resolve) => {
-                // 创建弹窗
                 const promptEl = document.createElement('div');
                 promptEl.className = 'custom-prompt';
                 promptEl.innerHTML = `
@@ -343,10 +439,9 @@
                 const cancelBtn = promptEl.querySelector('.btn-cancel');
                 const confirmBtn = promptEl.querySelector('.btn-confirm');
 
-                // 强制聚焦输入框（移动端关键）
+                // 强制聚焦输入框
                 setTimeout(() => {
                     input.focus();
-                    // 移动端唤起键盘
                     if (input.setSelectionRange) {
                         input.setSelectionRange(0, input.value.length);
                     }
@@ -384,7 +479,7 @@
             });
         }
 
-        // 编辑分数逻辑
+        // ========== 分数编辑逻辑 ==========
         async function handleScoreEdit(block) {
             try {
                 const currentScore = parseInt(block.dataset.score || 0);
@@ -401,13 +496,14 @@
                 const newScore = currentScore + addScore;
                 block.dataset.score = newScore;
                 block.querySelector('.score').textContent = newScore;
+                // 修改分数后保存数据
+                saveScoreDataToLocal();
             } catch (e) {
                 console.error('编辑分数出错：', e);
             }
         }
 
-        // ========== 其他功能 ==========
-        // 添加计分块
+        // ========== 添加计分块逻辑 ==========
         async function handleAddBlock() {
             const currentBlocks = document.querySelectorAll('.score-block').length;
             if (currentBlocks >= 10) {
@@ -415,70 +511,31 @@
                 return;
             }
             
-            // 弹出昵称输入框
             const nickname = await showNicknamePrompt();
             if (!nickname) {
-                return; // 如果取消输入或未输入内容，则不添加
+                return;
             }
             
-            const newBlock = document.createElement('div');
-            newBlock.className = 'score-block';
-            newBlock.dataset.score = '0';
-            newBlock.dataset.nickname = nickname;
-            newBlock.innerHTML = `
-                <div class="nickname">${nickname}</div>
-                <div class="score">0</div>
-            `;
-            
-            // 绑定触摸事件
-            newBlock.addEventListener('touchstart', handleTouchStart);
-            newBlock.addEventListener('touchend', handleTouchEnd);
-            newBlock.addEventListener('touchcancel', handleTouchEnd);
-
-            // 绑定PC端事件
-            newBlock.addEventListener('click', () => {
-                if (!isLongPressTriggered) {
-                    handleScoreEdit(newBlock);
-                }
-            });
-            newBlock.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                newBlock.classList.add('pressed');
-                pressTimer = setTimeout(() => {
-                    isLongPressTriggered = true;
-                    handleLongPress(newBlock);
-                }, LONG_PRESS_TIME);
-            });
-            newBlock.addEventListener('mouseup', () => {
-                clearTimeout(pressTimer);
-                newBlock.classList.remove('pressed');
-            });
-            newBlock.addEventListener('mouseleave', () => {
-                clearTimeout(pressTimer);
-                newBlock.classList.remove('pressed');
-            });
-
-            scoreContainer.insertBefore(newBlock, addBtn);
+            // 创建新计分块，初始分数为0
+            createScoreBlock(nickname, 0);
+            // 添加后保存数据
+            saveScoreDataToLocal();
         }
 
-        // 清空分数
+        // ========== 清空分数逻辑 ==========
         function handleClearScores() {
             document.querySelectorAll('.score-block').forEach(block => {
                 block.dataset.score = '0';
                 block.querySelector('.score').textContent = '0';
             });
+            // 清空后保存数据
+            saveScoreDataToLocal();
         }
 
         // ========== 初始化事件绑定 ==========
         function initEvents() {
-            // 计分块触摸事件（移动端核心）
-            document.querySelectorAll('.score-block').forEach(block => {
-                block.addEventListener('touchstart', handleTouchStart);
-                block.addEventListener('touchend', handleTouchEnd);
-                block.addEventListener('touchcancel', handleTouchEnd);
-            });
-
-            // +号按钮事件
+            // 计分块事件已经在创建时绑定，这里处理按钮事件
+            // +号按钮触摸事件
             addBtn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 addBtn.classList.add('pressed');
@@ -489,7 +546,7 @@
                 handleAddBlock();
             });
 
-            // 清空按钮事件
+            // 清空按钮触摸事件
             clearBtn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 clearBtn.classList.add('pressed');
@@ -500,39 +557,18 @@
                 handleClearScores();
             });
 
-            // PC端兼容（备用）
-            document.querySelectorAll('.score-block').forEach(block => {
-                block.addEventListener('click', () => {
-                    if (!isLongPressTriggered) {
-                        handleScoreEdit(block);
-                    }
-                });
-                block.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    block.classList.add('pressed');
-                    pressTimer = setTimeout(() => {
-                        isLongPressTriggered = true;
-                        handleLongPress(block);
-                    }, LONG_PRESS_TIME);
-                });
-                block.addEventListener('mouseup', () => {
-                    clearTimeout(pressTimer);
-                    block.classList.remove('pressed');
-                });
-                block.addEventListener('mouseleave', () => {
-                    clearTimeout(pressTimer);
-                    block.classList.remove('pressed');
-                });
-            });
-
+            // PC端按钮点击事件
             addBtn.addEventListener('click', handleAddBlock);
             clearBtn.addEventListener('click', handleClearScores);
         }
 
-        // 初始化
+        // ========== 页面初始化 ==========
         window.addEventListener('DOMContentLoaded', () => {
+            // 1. 先从本地存储加载并渲染计分块
+            renderScoreBlocksFromData();
+            // 2. 绑定所有事件
             initEvents();
-            // 禁用浏览器默认行为
+            // 3. 禁用浏览器默认触摸滚动行为
             document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
         });
     </script>
