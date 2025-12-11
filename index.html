@@ -47,15 +47,29 @@
             background-color: #2c3e50;
             color: white;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
+            font-size: 14px;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s ease;
             user-select: none;
             position: relative;
             z-index: 1;
+            padding: 5px;
+            text-align: center;
+        }
+        .score-block .nickname {
+            font-size: 12px;
+            margin-bottom: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+        .score-block .score {
+            font-size: 20px;
         }
         .score-block.pressed {
             background-color: #34495e;
@@ -171,8 +185,14 @@
 <body>
     <div class="main-container">
         <div class="score-container">
-            <div class="score-block" data-score="0">0</div>
-            <div class="score-block" data-score="0">0</div>
+            <div class="score-block" data-score="0" data-nickname="玩家1">
+                <div class="nickname">玩家1</div>
+                <div class="score">0</div>
+            </div>
+            <div class="score-block" data-score="0" data-nickname="玩家2">
+                <div class="nickname">玩家2</div>
+                <div class="score">0</div>
+            </div>
             <div class="add-btn">+</div>
         </div>
         <button class="clear-btn">清空</button>
@@ -187,6 +207,65 @@
         let pressTimer = null;
         let activeBlock = null; // 当前按压的块
         let isLongPressTriggered = false;
+
+        // 显示昵称输入弹窗
+        function showNicknamePrompt() {
+            return new Promise((resolve) => {
+                // 创建弹窗
+                const promptEl = document.createElement('div');
+                promptEl.className = 'custom-prompt';
+                promptEl.innerHTML = `
+                    <div class="prompt-dialog">
+                        <div class="prompt-title">请输入玩家昵称</div>
+                        <input type="text" class="prompt-input" placeholder="例如：张三" autocomplete="off">
+                        <div class="prompt-btns">
+                            <button class="prompt-btn btn-cancel">取消</button>
+                            <button class="prompt-btn btn-confirm">确认</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(promptEl);
+
+                const input = promptEl.querySelector('.prompt-input');
+                const cancelBtn = promptEl.querySelector('.btn-cancel');
+                const confirmBtn = promptEl.querySelector('.btn-confirm');
+
+                // 强制聚焦输入框
+                setTimeout(() => {
+                    input.focus();
+                }, 100);
+
+                // 取消按钮
+                cancelBtn.addEventListener('click', () => {
+                    document.body.removeChild(promptEl);
+                    resolve(null);
+                });
+
+                // 确认按钮
+                confirmBtn.addEventListener('click', () => {
+                    const value = input.value.trim();
+                    document.body.removeChild(promptEl);
+                    resolve(value);
+                });
+
+                // 点击外部关闭
+                promptEl.addEventListener('click', (e) => {
+                    if (e.target === promptEl) {
+                        document.body.removeChild(promptEl);
+                        resolve(null);
+                    }
+                });
+
+                // 回车确认
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        const value = input.value.trim();
+                        document.body.removeChild(promptEl);
+                        resolve(value);
+                    }
+                });
+            });
+        }
 
         // ========== 核心修复：移动端触摸事件处理 ==========
         // 触摸开始（优先处理）
@@ -237,7 +316,7 @@
                 alert('至少保留2个计分块');
                 return;
             }
-            if (confirm('确定删除该计分块吗？')) {
+            if (confirm(`确定删除 ${block.dataset.nickname} 吗？`)) {
                 block.remove();
             }
         }
@@ -251,7 +330,7 @@
                 promptEl.innerHTML = `
                     <div class="prompt-dialog">
                         <div class="prompt-title">请输入要添加的分数（增量）</div>
-                        <input type="number" class="prompt-input" value="0" autocomplete="off">
+                        <input type="number" class="prompt-input" value="" autocomplete="off">
                         <div class="prompt-btns">
                             <button class="prompt-btn btn-cancel">取消</button>
                             <button class="prompt-btn btn-confirm">确认</button>
@@ -321,7 +400,7 @@
 
                 const newScore = currentScore + addScore;
                 block.dataset.score = newScore;
-                block.textContent = newScore;
+                block.querySelector('.score').textContent = newScore;
             } catch (e) {
                 console.error('编辑分数出错：', e);
             }
@@ -329,21 +408,55 @@
 
         // ========== 其他功能 ==========
         // 添加计分块
-        function handleAddBlock() {
+        async function handleAddBlock() {
             const currentBlocks = document.querySelectorAll('.score-block').length;
             if (currentBlocks >= 10) {
                 alert('最多支持10人计分');
                 return;
             }
+            
+            // 弹出昵称输入框
+            const nickname = await showNicknamePrompt();
+            if (!nickname) {
+                return; // 如果取消输入或未输入内容，则不添加
+            }
+            
             const newBlock = document.createElement('div');
             newBlock.className = 'score-block';
             newBlock.dataset.score = '0';
-            newBlock.textContent = '0';
+            newBlock.dataset.nickname = nickname;
+            newBlock.innerHTML = `
+                <div class="nickname">${nickname}</div>
+                <div class="score">0</div>
+            `;
             
             // 绑定触摸事件
             newBlock.addEventListener('touchstart', handleTouchStart);
             newBlock.addEventListener('touchend', handleTouchEnd);
             newBlock.addEventListener('touchcancel', handleTouchEnd);
+
+            // 绑定PC端事件
+            newBlock.addEventListener('click', () => {
+                if (!isLongPressTriggered) {
+                    handleScoreEdit(newBlock);
+                }
+            });
+            newBlock.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                newBlock.classList.add('pressed');
+                pressTimer = setTimeout(() => {
+                    isLongPressTriggered = true;
+                    handleLongPress(newBlock);
+                }, LONG_PRESS_TIME);
+            });
+            newBlock.addEventListener('mouseup', () => {
+                clearTimeout(pressTimer);
+                newBlock.classList.remove('pressed');
+            });
+            newBlock.addEventListener('mouseleave', () => {
+                clearTimeout(pressTimer);
+                newBlock.classList.remove('pressed');
+            });
 
             scoreContainer.insertBefore(newBlock, addBtn);
         }
@@ -352,7 +465,7 @@
         function handleClearScores() {
             document.querySelectorAll('.score-block').forEach(block => {
                 block.dataset.score = '0';
-                block.textContent = '0';
+                block.querySelector('.score').textContent = '0';
             });
         }
 
